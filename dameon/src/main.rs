@@ -23,13 +23,17 @@ async fn main() -> io::Result<()> {
     // for now we will write the socket here:
 
     let listener = UnixListener::bind("/tmp/adthand").unwrap();
-    let prayer = Prayers::new_async("Toronto", "Canada").await.unwrap();
+    let mut prayer = Prayers::new_async(String::from("Toronto"), String::from("Canada"))
+        .await
+        .unwrap();
     while !should_exit() {
         tokio::select! {
             result = listener.accept() => {
                 match result {
                     Ok((socket, _addr)) => {
-                        tokio::spawn(async move { handle_client(socket).await });
+                        tokio::spawn(async move {
+                            handle_client(socket).await
+                        });
                     }
                     Err(e) => {error!("{:?}",e);}
                 }
@@ -44,7 +48,6 @@ async fn main() -> io::Result<()> {
                 }
             }
         }
-        let (socket, _addr) = listener.accept().await?;
     }
 
     Ok(cleanup())
@@ -76,7 +79,7 @@ async fn handle_client(mut stream: UnixStream) {
     let cmd: Request = bitcode::decode(&buf).unwrap();
     match cmd {
         Request::Ping => info!("Pinged!"),
-        Request::Kill => EXIT.store(true, Ordering::Relaxed),
+        Request::Kill => EXIT.store(true, Ordering::SeqCst),
     }
     info!("Size of payload: {}", buf.len());
 }
