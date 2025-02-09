@@ -11,4 +11,5 @@ ctrlc = "3.4.4"
 fern = "0.6.2"
 humantime = "2.1.0"
 log = "0.4.21"
+notify-rust = "4.11.0"
 utils = { version = "0.1.0", path = "../utils" }

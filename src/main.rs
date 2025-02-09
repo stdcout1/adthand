@@ -34,7 +34,12 @@ use utils::{self, Request};
 
 fn main() {
     let adthand = Adthand::parse();
+
     if let Adthand::Init = adthand {
+    
+    }
+
+    if let Adthand::Ping = adthand {
         //connect to socket 
         let mut stream = UnixStream::connect("/tmp/adthand").unwrap();
         stream.write_all(bitcode::encode(&Request::Ping).as_slice()).unwrap();

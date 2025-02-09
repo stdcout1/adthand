@@ -4,5 +4,6 @@ use bitcode::Encode;
 #[command(version, name = "adthand")]
 pub enum Adthand {
     Init,
+    Ping,
     Kill
 }

@@ -1,4 +1,4 @@
-mod prayer;
+pub mod prayer;
 use bitcode::{Decode, Encode};
 
 #[derive(Decode, Encode, Debug)]
@@ -18,6 +18,6 @@ mod tests {
 
     #[test]
     fn it_works() {
-        assert_eq!(1, std::mem::size_of::<Request>())
+        assert_eq!(4, std::mem::size_of::<Request>())
     }
 }
