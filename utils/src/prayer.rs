@@ -1,14 +1,8 @@
-use std::{
-    thread,
-    time::{Duration, SystemTime},
-};
-
+use std::time::Duration;
 use chrono::{format, DateTime, Days, Local, NaiveDate, NaiveDateTime, NaiveTime};
-use chrono_tz::Pacific::Niue;
 use reqwest;
 use thiserror::Error;
 
-use crate::prayer;
 
 #[derive(Error, Debug)]
 pub enum PrayerRetrievalError {

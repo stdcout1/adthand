@@ -53,7 +53,7 @@ async fn main() -> io::Result<()> {
                 info!("{:?}", prayer);
                 match result {
                     Ok(current) => {
-                        info!("new prayer: {}", current)
+                        notify(&current);
                     }
                     Err(e) => {error!("{:?}",e);}
                 }
