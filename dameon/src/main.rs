@@ -1,5 +1,6 @@
-use core::time;
 use log::{debug, error, info, trace, warn};
+use tokio::signal;
+use tokio::sync::mpsc;
 use std::time::SystemTime;
 use std::{
     fs,
@@ -12,12 +13,10 @@ use tokio::net::{UnixListener, UnixStream};
 mod socket;
 use utils::{self, prayer::Prayers, Request};
 
-static EXIT: AtomicBool = AtomicBool::new(false);
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
     init();
-    ctrlc::set_handler(|| EXIT.store(true, Ordering::SeqCst)).unwrap();
     // we need to do ensure the thread gets dropped so that everything inside in dropped
 
     // for now we will write the socket here:
@@ -26,13 +25,25 @@ async fn main() -> io::Result<()> {
     let mut prayer = Prayers::new_async(String::from("Toronto"), String::from("Canada"))
         .await
         .unwrap();
-    while !should_exit() {
+
+    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
+    let stx_clone = shutdown_tx.clone();
+    tokio::spawn(async move {
+        signal::ctrl_c().await.expect("Failed to listen to ctrl_c");
+        stx_clone.send(()).await.unwrap();
+    });
+
+    loop {
         tokio::select! {
+            _ = shutdown_rx.recv() => {
+                break;
+            }
             result = listener.accept() => {
                 match result {
                     Ok((socket, _addr)) => {
+                        let clone = shutdown_tx.clone();
                         tokio::spawn(async move {
-                            handle_client(socket).await
+                            handle_client(socket, clone).await
                         });
                     }
                     Err(e) => {error!("{:?}",e);}
@@ -69,7 +80,7 @@ fn notify(name: &str) {
         .unwrap();
 }
 
-async fn handle_client(mut stream: UnixStream) {
+async fn handle_client(mut stream: UnixStream, shutdown_tx: mpsc::Sender<()>) {
     info!("Got a connection");
     let mut reader = BufReader::new(stream);
     const SIZE: usize = std::mem::size_of::<Request>();
@@ -79,14 +90,11 @@ async fn handle_client(mut stream: UnixStream) {
     let cmd: Request = bitcode::decode(&buf).unwrap();
     match cmd {
         Request::Ping => info!("Pinged!"),
-        Request::Kill => EXIT.store(true, Ordering::SeqCst),
+        Request::Kill => shutdown_tx.send(()).await.unwrap(),
     }
     info!("Size of payload: {}", buf.len());
 }
 
-fn check() {
-    info!("Checking...");
-}
 
 fn cleanup() {
     //delete the socket --
@@ -98,9 +106,6 @@ fn cleanup() {
     info!("Cleaning up...")
 }
 
-fn should_exit() -> bool {
-    EXIT.load(Ordering::Acquire)
-}
 
 fn setup_logger() -> Result<(), fern::InitError> {
     fern::Dispatch::new()
