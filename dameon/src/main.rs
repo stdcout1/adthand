@@ -1,58 +1,67 @@
-use core::time;
 use log::{debug, error, info, trace, warn};
-use std::io::{Read, Write};
-use std::os::unix::net::UnixListener;
+use tokio::signal;
+use tokio::sync::mpsc;
 use std::time::SystemTime;
 use std::{
     fs,
-    io::{BufRead, BufReader},
-    os::unix::net::UnixStream,
     path::PathBuf,
     sync::atomic::{AtomicBool, Ordering},
-    thread::{self, spawn},
-    time::Duration,
 };
+use tokio::io::{self, AsyncReadExt, BufReader};
+use tokio::net::{UnixListener, UnixStream};
 
 mod socket;
-use utils::prayer;
 use utils::{self, prayer::Prayers, Request};
 
-static EXIT: AtomicBool = AtomicBool::new(false);
-fn main() {
+
+#[tokio::main]
+async fn main() -> io::Result<()> {
     init();
     // we need to do ensure the thread gets dropped so that everything inside in dropped
-    let command_thread = spawn(|| {
-        let listener: &UnixListener = &socket::SocketWrapper::new().unwrap().0;
-        for stream in listener.incoming() {
-            match stream {
-                Ok(stream) => {
-                    handle_client(stream); // we dont want theaded connections!
+
+    // for now we will write the socket here:
+
+    let listener = UnixListener::bind("/tmp/adthand").unwrap();
+    let mut prayer = Prayers::new_async(String::from("Toronto"), String::from("Canada"))
+        .await
+        .unwrap();
+
+    let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
+    let stx_clone = shutdown_tx.clone();
+    tokio::spawn(async move {
+        signal::ctrl_c().await.expect("Failed to listen to ctrl_c");
+        stx_clone.send(()).await.unwrap();
+    });
+
+    loop {
+        tokio::select! {
+            _ = shutdown_rx.recv() => {
+                break;
+            }
+            result = listener.accept() => {
+                match result {
+                    Ok((socket, _addr)) => {
+                        let clone = shutdown_tx.clone();
+                        tokio::spawn(async move {
+                            handle_client(socket, clone).await
+                        });
+                    }
+                    Err(e) => {error!("{:?}",e);}
                 }
-                Err(err) => {
-                    panic!("Error: with types");
+            },
+            result = prayer.get_next_prayer_async() => {
+                info!("{:?}", prayer);
+                match result {
+                    Ok(current) => {
+                        notify(&current);
+                    }
+                    Err(e) => {error!("{:?}",e);}
                 }
             }
         }
-    });
-
-    let prayer_thread = spawn(|| {
-        let prayers = Prayers::new("Toronto", "Canada").unwrap();
-        loop {
-            let name = prayers.get_next_prayer().unwrap();
-            info!("prayer time!");
-            //implement notify system here
-            notify(&name);
-            thread::sleep(Duration::from_secs(1)); //dont really need but just to be safe!
-        }
-    });
-
-    ctrlc::set_handler(|| EXIT.store(true, Ordering::SeqCst)).unwrap();
-    while !should_exit() {
-        check();
-        thread::sleep(time::Duration::from_secs(1));
     }
 
-    cleanup();
+    Ok(cleanup())
 }
 
 fn init() {
@@ -71,24 +80,21 @@ fn notify(name: &str) {
         .unwrap();
 }
 
-fn handle_client(mut stream: UnixStream) {
+async fn handle_client(mut stream: UnixStream, shutdown_tx: mpsc::Sender<()>) {
     info!("Got a connection");
     let mut reader = BufReader::new(stream);
     const SIZE: usize = std::mem::size_of::<Request>();
     let mut buf: [u8; SIZE] = [0u8; SIZE]; //we know how big the request will be
                                            // TODO: Handle errors
-    reader.read_exact(&mut buf).unwrap();
+    reader.read_exact(&mut buf).await; // error here that should be handeled
     let cmd: Request = bitcode::decode(&buf).unwrap();
     match cmd {
         Request::Ping => info!("Pinged!"),
-        Request::Kill => EXIT.store(true, Ordering::Relaxed),
+        Request::Kill => shutdown_tx.send(()).await.unwrap(),
     }
     info!("Size of payload: {}", buf.len());
 }
 
-fn check() {
-    info!("Checking...");
-}
 
 fn cleanup() {
     //delete the socket --
@@ -100,9 +106,6 @@ fn cleanup() {
     info!("Cleaning up...")
 }
 
-fn should_exit() -> bool {
-    EXIT.load(Ordering::Acquire)
-}
 
 fn setup_logger() -> Result<(), fern::InitError> {
     fern::Dispatch::new()

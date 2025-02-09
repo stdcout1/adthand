@@ -1,7 +1,8 @@
-use std::{thread, time::{Duration, SystemTime}};
-
+use std::time::Duration;
+use chrono::{format, DateTime, Days, Local, NaiveDate, NaiveDateTime, NaiveTime};
 use reqwest;
 use thiserror::Error;
+
 
 #[derive(Error, Debug)]
 pub enum PrayerRetrievalError {
@@ -22,100 +23,89 @@ pub enum PrayerResults {
 
 #[derive(Debug, Clone)]
 pub struct Prayer {
-    pub time: Duration,
+    pub time: NaiveDateTime,
     pub name: String,
 }
 
 #[derive(Debug)]
 pub struct Prayers {
-    now: Duration,
+    expiry: NaiveDateTime,
+    city: String,
+    country: String,
     pub prayers: Vec<Prayer>,
-}
-//since UNIX_EPOCH
-fn now() -> Duration {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
 }
 
 impl Prayers {
-    pub fn new(city: &str, country: &str) -> Result<Prayers, PrayerRetrievalError> {
+    pub async fn new_async(city: String, country: String) -> Result<Prayers, PrayerRetrievalError> {
         let url = format!(
             "https://api.aladhan.com/v1/timingsByCity?city={}&country={}",
             city, country
         );
-        let map = reqwest::blocking::get(url).unwrap().json::<serde_json::Value>()?;
+        let map = reqwest::get(url).await?.json::<serde_json::Value>().await?;
 
         let mut prayers = Vec::new();
-        let now = now();
+        let creation_time = Local::now();
+        let expiry = creation_time
+            .date_naive()
+            .succ_opt()
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        // let data_date = map["data"]["date"]["gregorian"]["date"].as_str().unwrap();
+        // let date = DateTime::parse_from_str(, s)?;
         for (name, time) in map["data"]["timings"].as_object().unwrap() {
-            let prayer_hour: u64 = time.to_string()[1..3].parse::<u64>().unwrap();
-            let prayer_min: u64 = time.to_string()[4..6].parse::<u64>().unwrap();
-            let prayer_time = now + Duration::from_secs(prayer_hour * 60 * 60 + prayer_min * 60);
+            let time_parts: Vec<&str> = time.as_str().unwrap().split(':').collect();
+            let hour: u32 = time_parts[0].parse().unwrap();
+            let minute: u32 = time_parts[1].parse().unwrap();
+
+            // Combine the parsed time with the current date
+            let naive_date = creation_time.date_naive();
+            let naive_time = NaiveTime::from_hms_opt(hour, minute, 0).unwrap();
+            let datetime = naive_date.and_time(naive_time);
 
             prayers.push(Prayer {
                 name: name.to_owned(),
-                time: prayer_time,
+                time: datetime,
             })
         }
-        Ok(Prayers { now, prayers })
+        Ok(Prayers {
+            city,
+            country,
+            expiry,
+            prayers,
+        })
     }
-    pub fn get_next_prayer(self: &Self) -> Result<String, PrayerRetrievalError> {
-        let now = now() + (self.prayers[0].time - self.now) - Duration::from_secs(5);
-        let mut prayers = self
-            .prayers
-            .clone() //colone D:
+    // This future resolves when it is a prayer time. Will refresh the struct if expired
+    pub async fn get_next_prayer_async(self: &mut Self) -> Result<String, PrayerRetrievalError> {
+        let now = Local::now().naive_local();
+        if now > self.expiry {
+            println!("We have expired");
+            let new = Self::new_async(self.city.clone(), self.country.clone()).await?;
+            std::mem::replace(self, new);
+        }
+
+        println!("Getting next prayer...");
+        // println!("{:?}", self.prayers);
+        self.prayers = self.prayers
+            .clone() // Clone the prayers list
             .into_iter()
-            .map(|prayer| Prayer {
-                name: prayer.name,
-                time: prayer.time.checked_sub(now).unwrap_or(Duration::MAX),
+            .filter(|prayer| {
+                // Filter out invalid or zero durations
+                let duration = prayer.time.signed_duration_since(now);
+                // println!("Prayer {} has a time delta of {:?}", prayer.name, duration);
+                duration.num_seconds() > 0 // Filter out zero or negative durations
             })
-            .filter(|prayers| prayers.time != Duration::MAX)
-            .collect::<Vec<Prayer>>();
-        prayers.sort_by(|b, a| b.time.cmp(&a.time));
-        thread::sleep(prayers[0].time);
-        let name = prayers.remove(0);
+            .collect();
+        // Sort the prayers by the remaining time
+        self.prayers.sort_by(|a, b| a.time.cmp(&b.time));
+
+        // println!("{:?}", prayers);
+        let sleep_dur = self.prayers[0].time.signed_duration_since(now).num_seconds() as u64;
+        println!("Sleeping for {:?} to wait for {}", sleep_dur, self.prayers[0].name);
+        tokio::time::sleep(Duration::new(sleep_dur, 0)).await;
+        let name = self.prayers.remove(0);
         Ok(name.name)
     }
-    // pub async fn new_async(city: &str, country: &str) -> Result<Prayers, PrayerRetrievalError> {
-    //     let url = format!(
-    //         "https://api.aladhan.com/v1/timingsByCity?city={}&country={}",
-    //         city, country
-    //     );
-    //     let map = reqwest::get(url).await?.json::<serde_json::Value>().await?;
-    //
-    //     let mut prayers = Vec::new();
-    //     let now = now();
-    //     for (name, time) in map["data"]["timings"].as_object().unwrap() {
-    //         let prayer_hour: u64 = time.to_string()[1..3].parse::<u64>().unwrap();
-    //         let prayer_min: u64 = time.to_string()[4..6].parse::<u64>().unwrap();
-    //         let prayer_time = now + Duration::from_secs(prayer_hour * 60 * 60 + prayer_min * 60);
-    //
-    //         prayers.push(Prayer {
-    //             name: name.to_owned(),
-    //             time: prayer_time,
-    //         })
-    //     }
-    //     Ok(Prayers { now, prayers })
-    // }
-    // // This future resolves when it is a prayer time. 
-    // pub async fn get_next_prayer_async(self: &Self) -> Result<String, PrayerRetrievalError> {
-    //     let now = now() + (self.prayers[0].time - self.now) - Duration::from_secs(5);
-    //     let mut prayers = self
-    //         .prayers
-    //         .clone() //colone D:
-    //         .into_iter()
-    //         .map(|prayer| Prayer {
-    //             name: prayer.name,
-    //             time: prayer.time.checked_sub(now).unwrap_or(Duration::MAX),
-    //         })
-    //         .filter(|prayers| prayers.time != Duration::MAX)
-    //         .collect::<Vec<Prayer>>();
-    //     prayers.sort_by(|b, a| b.time.cmp(&a.time));
-    //     tokio::time::sleep(prayers[0].time).await;
-    //     let name = prayers.remove(0);
-    //     Ok(name.name)
-    // }
 }
 #[cfg(test)]
 mod tests {
@@ -123,4 +113,3 @@ mod tests {
     #[test]
     fn toronto_canada_prayers() {}
 }
-
