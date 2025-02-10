@@ -1,6 +1,6 @@
 use chrono::{format, DateTime, Days, Local, NaiveDate, NaiveDateTime, NaiveTime};
 use reqwest;
-use std::time::Duration;
+use std::{collections::VecDeque, time::Duration};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -30,6 +30,7 @@ pub struct Prayer {
 pub struct Prayers {
     city: String,
     country: String,
+    prayer_que: VecDeque<Prayer>,
     pub prayers: Vec<Prayer>,
 }
 
@@ -64,57 +65,61 @@ impl Prayers {
                 time: datetime,
             })
         }
+        let mut plist = prayers
+            .clone()
+            .into_iter()
+            .filter(|prayer| {
+                // Filter out invalid or zero durations
+                let duration = prayer
+                    .time
+                    .signed_duration_since(Local::now().naive_local());
+                // println!("Prayer {} has a time delta of {:?}", prayer.name, duration);
+                duration.num_seconds() > 0 // Filter out zero or negative durations
+            })
+            .collect::<Vec<Prayer>>();
+        plist.sort_by(|a, b| a.time.cmp(&b.time));
+        // Sort the prayers by the remaining time
         Ok(Prayers {
             city,
             country,
+            prayer_que: plist.into(),
             prayers,
         })
     }
     // This future resolves when it is a prayer time. Will refresh the struct if expired
     pub async fn get_next_prayer_async(self: &mut Self) -> Result<String, PrayerRetrievalError> {
-        // TODO: replace with que system
         let now = Local::now().naive_local();
 
         println!("Getting next prayer...");
-        // println!("{:?}", self.prayers);
-        self.prayers = self
-            .prayers
-            .clone() // Clone the prayers list
-            .into_iter()
-            .filter(|prayer| {
-                // Filter out invalid or zero durations
-                let duration = prayer.time.signed_duration_since(now);
-                // println!("Prayer {} has a time delta of {:?}", prayer.name, duration);
-                duration.num_seconds() > 0 // Filter out zero or negative durations
-            })
-            .collect();
-        // Sort the prayers by the remaining time
-        self.prayers.sort_by(|a, b| a.time.cmp(&b.time));
 
-        println!("{:?}", self.prayers);
-        if self.prayers.len() == 0 {
-            println!("We have expired");
-            let new = Self::new_async(
-                self.city.clone(),
-                self.country.clone(),
-                Local::now().date_naive().succ_opt().unwrap(),
-            )
-            .await?;
-            // new.get_next_prayer_async().await;
-            *self = new; //apparently this is safe?
-            // std::mem::replace(self, new);
+        let result = self.prayer_que.pop_front();
+
+        match result {
+            Some(current_prayer) => {
+                let sleep_dur = current_prayer 
+                    .time
+                    .signed_duration_since(now)
+                    .num_seconds() as u64;
+                println!(
+                    "Sleeping for {:?} to wait for {}",
+                    sleep_dur, current_prayer.name
+                );
+                tokio::time::sleep(Duration::new(5, 0)).await;
+                Ok(current_prayer.name)
+            }
+            None => {
+                println!("We have expired");
+                let new = Self::new_async(
+                    self.city.clone(),
+                    self.country.clone(),
+                    Local::now().date_naive().succ_opt().unwrap(),
+                )
+                .await?;
+                // new.get_next_prayer_async().await;
+                *self = new; //apparently this is safe?
+                Err(PrayerRetrievalError::Unknown)
+            }
         }
-        let sleep_dur = self.prayers[0]
-            .time
-            .signed_duration_since(now)
-            .num_seconds() as u64;
-        println!(
-            "Sleeping for {:?} to wait for {}",
-            sleep_dur, self.prayers[0].name
-        );
-        tokio::time::sleep(Duration::new(sleep_dur, 0)).await;
-        let name = self.prayers.remove(0);
-        Ok(name.name)
     }
 }
 #[cfg(test)]
