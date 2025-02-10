@@ -1,8 +1,7 @@
-use std::time::Duration;
 use chrono::{format, DateTime, Days, Local, NaiveDate, NaiveDateTime, NaiveTime};
 use reqwest;
+use std::time::Duration;
 use thiserror::Error;
-
 
 #[derive(Error, Debug)]
 pub enum PrayerRetrievalError {
@@ -29,28 +28,26 @@ pub struct Prayer {
 
 #[derive(Debug)]
 pub struct Prayers {
-    expiry: NaiveDateTime,
     city: String,
     country: String,
     pub prayers: Vec<Prayer>,
 }
 
 impl Prayers {
-    pub async fn new_async(city: String, country: String) -> Result<Prayers, PrayerRetrievalError> {
+    pub async fn new_async(
+        city: String,
+        country: String,
+        date: NaiveDate,
+    ) -> Result<Prayers, PrayerRetrievalError> {
+        let formatted_date = date.format("%d-%m-%Y").to_string();
         let url = format!(
-            "https://api.aladhan.com/v1/timingsByCity?city={}&country={}",
-            city, country
+            "https://api.aladhan.com/v1/timingsByCity/{}?city={}&country={}",
+            formatted_date, city, country
         );
         let map = reqwest::get(url).await?.json::<serde_json::Value>().await?;
+        println!("Looking up prayers for: {}", formatted_date);
 
         let mut prayers = Vec::new();
-        let creation_time = Local::now();
-        let expiry = creation_time
-            .date_naive()
-            .succ_opt()
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
         // let data_date = map["data"]["date"]["gregorian"]["date"].as_str().unwrap();
         // let date = DateTime::parse_from_str(, s)?;
         for (name, time) in map["data"]["timings"].as_object().unwrap() {
@@ -59,9 +56,8 @@ impl Prayers {
             let minute: u32 = time_parts[1].parse().unwrap();
 
             // Combine the parsed time with the current date
-            let naive_date = creation_time.date_naive();
             let naive_time = NaiveTime::from_hms_opt(hour, minute, 0).unwrap();
-            let datetime = naive_date.and_time(naive_time);
+            let datetime = date.and_time(naive_time);
 
             prayers.push(Prayer {
                 name: name.to_owned(),
@@ -71,22 +67,18 @@ impl Prayers {
         Ok(Prayers {
             city,
             country,
-            expiry,
             prayers,
         })
     }
     // This future resolves when it is a prayer time. Will refresh the struct if expired
     pub async fn get_next_prayer_async(self: &mut Self) -> Result<String, PrayerRetrievalError> {
+        // TODO: replace with que system
         let now = Local::now().naive_local();
-        if now > self.expiry {
-            println!("We have expired");
-            let new = Self::new_async(self.city.clone(), self.country.clone()).await?;
-            std::mem::replace(self, new);
-        }
 
         println!("Getting next prayer...");
         // println!("{:?}", self.prayers);
-        self.prayers = self.prayers
+        self.prayers = self
+            .prayers
             .clone() // Clone the prayers list
             .into_iter()
             .filter(|prayer| {
@@ -99,9 +91,27 @@ impl Prayers {
         // Sort the prayers by the remaining time
         self.prayers.sort_by(|a, b| a.time.cmp(&b.time));
 
-        // println!("{:?}", prayers);
-        let sleep_dur = self.prayers[0].time.signed_duration_since(now).num_seconds() as u64;
-        println!("Sleeping for {:?} to wait for {}", sleep_dur, self.prayers[0].name);
+        println!("{:?}", self.prayers);
+        if self.prayers.len() == 0 {
+            println!("We have expired");
+            let new = Self::new_async(
+                self.city.clone(),
+                self.country.clone(),
+                Local::now().date_naive().succ_opt().unwrap(),
+            )
+            .await?;
+            // new.get_next_prayer_async().await;
+            *self = new; //apparently this is safe?
+            // std::mem::replace(self, new);
+        }
+        let sleep_dur = self.prayers[0]
+            .time
+            .signed_duration_since(now)
+            .num_seconds() as u64;
+        println!(
+            "Sleeping for {:?} to wait for {}",
+            sleep_dur, self.prayers[0].name
+        );
         tokio::time::sleep(Duration::new(sleep_dur, 0)).await;
         let name = self.prayers.remove(0);
         Ok(name.name)

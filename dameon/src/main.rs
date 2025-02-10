@@ -22,7 +22,7 @@ async fn main() -> io::Result<()> {
     // for now we will write the socket here:
 
     let listener = UnixListener::bind("/tmp/adthand").unwrap();
-    let mut prayer = Prayers::new_async(String::from("Toronto"), String::from("Canada"))
+    let mut prayer = Prayers::new_async(String::from("Toronto"), String::from("Canada"), chrono::Local::now().date_naive() )
         .await
         .unwrap();
 
