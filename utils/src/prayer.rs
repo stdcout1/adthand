@@ -104,7 +104,7 @@ impl Prayers {
                     "Sleeping for {:?} to wait for {}",
                     sleep_dur, current_prayer.name
                 );
-                tokio::time::sleep(Duration::new(5, 0)).await;
+                tokio::time::sleep(Duration::new(sleep_dur, 0)).await;
                 Ok(current_prayer.name)
             }
             None => {
@@ -117,6 +117,7 @@ impl Prayers {
                 .await?;
                 // new.get_next_prayer_async().await;
                 *self = new; //apparently this is safe?
+                // TODO: this shouldnt be an error.
                 Err(PrayerRetrievalError::Unknown)
             }
         }

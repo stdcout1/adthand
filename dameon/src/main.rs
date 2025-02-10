@@ -17,7 +17,6 @@ use utils::{self, prayer::Prayers, Request};
 #[tokio::main]
 async fn main() -> io::Result<()> {
     init();
-    // we need to do ensure the thread gets dropped so that everything inside in dropped
 
     // for now we will write the socket here:
 

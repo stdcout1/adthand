@@ -18,7 +18,7 @@
             cargoBuildFlags = [ "--workspace" ];
 
             useFetchCargoVendor = true;
-            cargoHash = "sha256-N1bj1vqCg0NHVi+EBKPMhAlW++spVEuo2+oTDV3PbiE=";
+            cargoHash = "sha256-fm6WVXEWE+kVlGlUIHxzlHsVgMJKkcYjQkm3UCnxP5I=";
 
             nativeBuildInputs = [ pkgs.pkg-config ];
 
