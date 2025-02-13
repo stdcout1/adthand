@@ -5,5 +5,7 @@ use bitcode::Encode;
 pub enum Adthand {
     Init,
     Ping,
-    Kill
+    Kill,
+    Next,
+    All
 }

@@ -1,18 +1,26 @@
 use log::{debug, error, info, trace, warn};
-use tokio::signal;
-use tokio::sync::mpsc;
+use tokio::time::sleep;
+use std::sync::Arc;
 use std::time::SystemTime;
 use std::{
     fs,
     path::PathBuf,
     sync::atomic::{AtomicBool, Ordering},
 };
-use tokio::io::{self, AsyncReadExt, BufReader};
+use tokio::io::{self, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{UnixListener, UnixStream};
+use tokio::signal;
+use tokio::sync::{mpsc, Mutex, RwLock};
+use utils::prayer::Prayer;
+use utils::Answer;
 
 mod socket;
 use utils::{self, prayer::Prayers, Request};
 
+struct State {
+    next: Prayer,
+    upcoming: Vec<Prayer>,
+}
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -21,42 +29,56 @@ async fn main() -> io::Result<()> {
     // for now we will write the socket here:
 
     let listener = UnixListener::bind("/tmp/adthand").unwrap();
-    let mut prayer = Prayers::new_async(String::from("Toronto"), String::from("Canada"), chrono::Local::now().date_naive() )
-        .await
-        .unwrap();
+    let mut prayer = Prayers::new_async(
+        String::from("Toronto"),
+        String::from("Canada"),
+        chrono::Local::now().date_naive(),
+    )
+    .await
+    .unwrap();
+
+    let prayer = Arc::new(RwLock::new(prayer));
 
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
     let stx_clone = shutdown_tx.clone();
+    let prayer_ptr = prayer.clone();
     tokio::spawn(async move {
         signal::ctrl_c().await.expect("Failed to listen to ctrl_c");
         stx_clone.send(()).await.unwrap();
+    });
+
+    tokio::spawn(async move {
+        loop {
+            let sleep_dur = prayer_ptr.write().await.get_next_prayer_duration().await;
+            match sleep_dur {
+                Ok(time) => {
+                    sleep(time).await;
+                    notify(prayer_ptr.read().await.next.as_ref().unwrap().name.as_ref());
+                }
+                Err(e) => {
+                    error!("{:?}", e);
+                }
+            }
+        }
     });
 
     loop {
         tokio::select! {
             _ = shutdown_rx.recv() => {
                 break;
-            }
+            },
             result = listener.accept() => {
                 match result {
                     Ok((socket, _addr)) => {
                         let clone = shutdown_tx.clone();
+                        let p_clone = prayer.clone();
                         tokio::spawn(async move {
-                            handle_client(socket, clone).await
+                            handle_client(socket, clone, p_clone).await
                         });
                     }
                     Err(e) => {error!("{:?}",e);}
                 }
             },
-            result = prayer.get_next_prayer_async() => {
-                info!("{:?}", prayer);
-                match result {
-                    Ok(current) => {
-                        notify(&current);
-                    }
-                    Err(e) => {error!("{:?}",e);}
-                }
-            }
         }
     }
 
@@ -79,21 +101,35 @@ fn notify(name: &str) {
         .unwrap();
 }
 
-async fn handle_client(mut stream: UnixStream, shutdown_tx: mpsc::Sender<()>) {
+async fn handle_client(
+    mut stream: UnixStream,
+    shutdown_tx: mpsc::Sender<()>,
+    prayer: Arc<RwLock<Prayers>>,
+) {
     info!("Got a connection");
-    let mut reader = BufReader::new(stream);
+    stream.readable().await;
     const SIZE: usize = std::mem::size_of::<Request>();
     let mut buf: [u8; SIZE] = [0u8; SIZE]; //we know how big the request will be
-                                           // TODO: Handle errors
-    reader.read_exact(&mut buf).await; // error here that should be handeled
+    stream.read_exact(&mut buf).await; // error here that should be handeled
     let cmd: Request = bitcode::decode(&buf).unwrap();
+    info!("Got a {:?} command", cmd);
+    let prayer = prayer.read().await;
     match cmd {
         Request::Ping => info!("Pinged!"),
         Request::Kill => shutdown_tx.send(()).await.unwrap(),
+        Request::Next => send(&mut stream, Answer::Next(prayer.next.as_ref().unwrap().name.as_ref())).await,
+        Request::All => send(&mut stream, Answer::All(prayer.prayer_que.iter().map(|p| p.name.as_ref() ).collect())).await,
     }
-    info!("Size of payload: {}", buf.len());
+    info!("Size of incomming payload: {}", buf.len());
 }
 
+async fn send<'a>(stream: &mut UnixStream, message: Answer<'a>) {
+    let cmd: Vec<u8> = bitcode::encode(&message);
+    info!("Encoded: {:?}", cmd);
+    stream.writable().await;
+    stream.write_all(&cmd).await.unwrap();
+    info!("Sent back a payload of size: {}", cmd.len())
+}
 
 fn cleanup() {
     //delete the socket --
@@ -104,7 +140,6 @@ fn cleanup() {
     info! {"Removed socket at {:?}", socket_addr};
     info!("Cleaning up...")
 }
-
 
 fn setup_logger() -> Result<(), fern::InitError> {
     fern::Dispatch::new()

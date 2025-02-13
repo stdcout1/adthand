@@ -30,7 +30,9 @@ pub struct Prayer {
 pub struct Prayers {
     city: String,
     country: String,
-    prayer_que: VecDeque<Prayer>,
+    // TODO: we should remove this pubs 
+    pub next: Option<Prayer>,
+    pub prayer_que: VecDeque<Prayer>,
     pub prayers: Vec<Prayer>,
 }
 
@@ -82,30 +84,27 @@ impl Prayers {
         Ok(Prayers {
             city,
             country,
+            next: None,
             prayer_que: plist.into(),
             prayers,
         })
     }
     // This future resolves when it is a prayer time. Will refresh the struct if expired
-    pub async fn get_next_prayer_async(self: &mut Self) -> Result<String, PrayerRetrievalError> {
+    pub async fn get_next_prayer_duration(self: &mut Self) -> Result<Duration, PrayerRetrievalError> {
         let now = Local::now().naive_local();
 
         println!("Getting next prayer...");
 
-        let result = self.prayer_que.pop_front();
+        self.next = self.prayer_que.pop_front();
 
-        match result {
+        match &self.next {
             Some(current_prayer) => {
-                let sleep_dur = current_prayer 
-                    .time
-                    .signed_duration_since(now)
-                    .num_seconds() as u64;
+                let sleep_dur = current_prayer.time.signed_duration_since(now).num_seconds() as u64;
                 println!(
                     "Sleeping for {:?} to wait for {}",
                     sleep_dur, current_prayer.name
                 );
-                tokio::time::sleep(Duration::new(sleep_dur, 0)).await;
-                Ok(current_prayer.name)
+                Ok(Duration::new(sleep_dur, 0))
             }
             None => {
                 println!("We have expired");
@@ -117,7 +116,7 @@ impl Prayers {
                 .await?;
                 // new.get_next_prayer_async().await;
                 *self = new; //apparently this is safe?
-                // TODO: this shouldnt be an error.
+                             // TODO: this shouldnt be an error.
                 Err(PrayerRetrievalError::Unknown)
             }
         }

@@ -1,15 +1,20 @@
 pub mod prayer;
 use bitcode::{Decode, Encode};
+use prayer::Prayers;
 
 #[derive(Decode, Encode, Debug)]
 pub enum Request {
     Kill,
-    Ping
+    Ping,
+    Next,
+    All
 }
 
 #[derive(Decode, Encode, Debug)]
-pub enum Answer {
+pub enum Answer<'a> {
     Ping,
+    Next(&'a str),
+    All(Vec<&'a str>)
 }
 
 #[cfg(test)]

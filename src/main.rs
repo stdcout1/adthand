@@ -24,34 +24,53 @@
 //     }
 // }
 
-
 mod parser;
-use std::{io::{Read, Write}, os::unix::net::UnixStream};
+use std::{
+    io::{Read, Write},
+    os::unix::net::UnixStream,
+};
 
 use clap::Parser;
 use parser::Adthand;
-use utils::{self, Request};
+use utils::{self, Answer, Request};
 
 fn main() {
     let adthand = Adthand::parse();
 
-    if let Adthand::Init = adthand {
-    
-    }
+    let mut stream = UnixStream::connect("/tmp/adthand").unwrap();
 
-    if let Adthand::Ping = adthand {
-        //connect to socket 
-        let mut stream = UnixStream::connect("/tmp/adthand").unwrap();
-        stream.write_all(bitcode::encode(&Request::Ping).as_slice()).unwrap();
-        println!("flushed");
-    }
-
-    if let Adthand::Kill = adthand {
-        println!("Killing...");
-        let mut stream = UnixStream::connect("/tmp/adthand").unwrap();
-        stream.write_all(bitcode::encode(&Request::Kill).as_slice()).unwrap();
-        println!("flushed");
-        
+    match adthand {
+        Adthand::Init => {}// do we really need this?
+        Adthand::Ping => {
+            stream
+                .write_all(bitcode::encode(&Request::Ping).as_slice())
+                .unwrap();
+            println!("flushed");
+        }
+        Adthand::Kill => {
+            stream
+                .write_all(bitcode::encode(&Request::Kill).as_slice())
+                .unwrap();
+            println!("flushed");
+        }
+        Adthand::All => {
+            stream
+                .write_all(bitcode::encode(&Request::All).as_slice())
+                .unwrap();
+            let mut buf: Vec<u8> = Vec::new();
+            stream.read_to_end(&mut buf).unwrap();
+            let cmd: Answer = bitcode::decode(&buf).unwrap();
+            println!("Recived command of: {:?}", cmd)
+        }
+        Adthand::Next => {
+            stream
+                .write_all(bitcode::encode(&Request::Next).as_slice())
+                .unwrap();
+            let mut buf: Vec<u8> = Vec::new();
+            stream.read_to_end(&mut buf).unwrap();
+            let cmd: Answer = bitcode::decode(&buf).unwrap();
+            println!("Recived command of: {:?}", cmd)
+        }
     }
 
 }
