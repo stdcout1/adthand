@@ -62,14 +62,25 @@ fn main() {
             let cmd: Answer = bitcode::decode(&buf).unwrap();
             println!("Recived command of: {:?}", cmd)
         }
-        Adthand::Next => {
+        Adthand::Next { relative } => {
             stream
                 .write_all(bitcode::encode(&Request::Next).as_slice())
                 .unwrap();
             let mut buf: Vec<u8> = Vec::new();
             stream.read_to_end(&mut buf).unwrap();
             let cmd: Answer = bitcode::decode(&buf).unwrap();
-            println!("Recived command of: {:?}", cmd)
+            println!("Recived command of: {:?}", cmd);
+            if let Answer::Next(name, time, relative_time ) = cmd {
+                if relative {
+                    println!("{} {}",name, relative_time)
+                }
+                else {
+                    println!("{} at {}", name, time)
+                }
+            }
+            else {
+                eprint!("Recived incorrect response")
+            }
         }
     }
 

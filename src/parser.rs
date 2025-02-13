@@ -1,11 +1,14 @@
 use clap::Parser;
-use bitcode::Encode;
+/// Consumer to adthand dameon
 #[derive(Parser)]
-#[command(version, name = "adthand")]
+#[command(version, about, name = "adthand")]
 pub enum Adthand {
     Init,
     Ping,
     Kill,
-    Next,
+    Next {
+        #[arg(short)]
+        relative: bool
+    },
     All
 }
