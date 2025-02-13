@@ -13,7 +13,7 @@ pub enum Request {
 #[derive(Decode, Encode, Debug)]
 pub enum Answer<'a> {
     Ping,
-    Next(&'a str),
+    Next(&'a str, &'a str, &'a str),
     All(Vec<&'a str>)
 }
 

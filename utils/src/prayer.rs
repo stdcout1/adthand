@@ -122,6 +122,28 @@ impl Prayers {
         }
     }
 }
+
+// General utils
+
+pub fn format_time_difference(future_time: NaiveDateTime) -> String {
+    let now = Local::now().naive_local();
+    let duration = future_time - now;
+
+    if duration.num_seconds() <= 0 {
+        return "now".to_string();
+    }
+
+    let hours = duration.num_hours();
+    let minutes = (duration.num_minutes() % 60).abs();
+
+    match (hours, minutes) {
+        (0, m) => format!("in {} mins", m),
+        (h, 0) => format!("in {} hours", h),
+        (h, m) => format!("in {} hours and {} mins", h, m),
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

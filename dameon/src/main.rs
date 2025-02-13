@@ -1,5 +1,5 @@
+use chrono::NaiveTime;
 use log::{debug, error, info, trace, warn};
-use tokio::time::sleep;
 use std::sync::Arc;
 use std::time::SystemTime;
 use std::{
@@ -11,7 +11,8 @@ use tokio::io::{self, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal;
 use tokio::sync::{mpsc, Mutex, RwLock};
-use utils::prayer::Prayer;
+use tokio::time::sleep;
+use utils::prayer::{format_time_difference, Prayer};
 use utils::Answer;
 
 mod socket;
@@ -117,8 +118,31 @@ async fn handle_client(
     match cmd {
         Request::Ping => info!("Pinged!"),
         Request::Kill => shutdown_tx.send(()).await.unwrap(),
-        Request::Next => send(&mut stream, Answer::Next(prayer.next.as_ref().unwrap().name.as_ref())).await,
-        Request::All => send(&mut stream, Answer::All(prayer.prayer_que.iter().map(|p| p.name.as_ref() ).collect())).await,
+        Request::Next => {
+            let next_name: &str = prayer.next.as_ref().unwrap().name.as_ref();
+            let next_time: String = prayer
+                .next
+                .as_ref()
+                .unwrap()
+                .time
+                .time()
+                .format("%I:%M %P")
+                .to_string();
+            let next_difference: String =
+                format_time_difference(prayer.next.as_ref().unwrap().time);
+            send(
+                &mut stream,
+                Answer::Next(next_name, &next_time, &next_difference),
+            )
+            .await
+        }
+        Request::All => {
+            send(
+                &mut stream,
+                Answer::All(prayer.prayer_que.iter().map(|p| p.name.as_ref()).collect()),
+            )
+            .await
+        }
     }
     info!("Size of incomming payload: {}", buf.len());
 }
