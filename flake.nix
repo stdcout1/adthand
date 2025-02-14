@@ -7,11 +7,22 @@
   outputs = { self, nixpkgs, flake-utils }:
     flake-utils.lib.eachDefaultSystem
       (system:
-        let pkgs = nixpkgs.legacyPackages.${system}; in
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          nativeBuildInputs = [ pkgs.pkg-config ];
+          buildInputs = with pkgs;[
+            alsa-lib
+            openssl
+            xdotool
+          ];
+        in
         {
-          devShells.default = import ./shell.nix { inherit pkgs; };
-
+          devShells.default = pkgs.mkShell
+            {
+              inherit buildInputs nativeBuildInputs;
+            };
           packages.default = pkgs.rustPlatform.buildRustPackage rec {
+            inherit buildInputs nativeBuildInputs;
             pname = "adthand";
             version = "1";
             src = ./.;
@@ -20,13 +31,9 @@
             useFetchCargoVendor = true;
             cargoHash = "sha256-fm6WVXEWE+kVlGlUIHxzlHsVgMJKkcYjQkm3UCnxP5I=";
 
-            nativeBuildInputs = [ pkgs.pkg-config ];
-
-            buildInputs = with pkgs;[
-              alsa-lib
-              openssl
-              xdotool
-            ];
+            postFixup = ''
+              mv $out/bin/dameon $out/bin/adthand-dameon
+            '';
           };
 
         }
