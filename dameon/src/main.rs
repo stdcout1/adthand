@@ -1,10 +1,9 @@
 use log::{error, info};
+use notify_rust::error::ErrorKind;
+use tokio::fs::remove_file;
 use std::sync::Arc;
 use std::time::SystemTime;
-use std::{
-    fs,
-    path::PathBuf,
-};
+use std::{fs, path::PathBuf};
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal;
@@ -16,14 +15,28 @@ use utils::Answer;
 mod socket;
 use utils::{self, prayer::Prayers, Request};
 
-
 #[tokio::main]
 async fn main() -> io::Result<()> {
     init();
 
     // for now we will write the socket here:
-
-    let listener = UnixListener::bind("/tmp/adthand").unwrap();
+    const SOCKET_ADDR: &'static str = "/tmp/adthand";
+    let listener;
+    match UnixListener::bind(SOCKET_ADDR) {
+        Ok(l) => {
+            listener = l;
+        }
+        Err(error) => {
+            if error.kind() == io::ErrorKind::AddrInUse {
+                remove_file(SOCKET_ADDR).await.unwrap();
+                listener = UnixListener::bind(SOCKET_ADDR).unwrap();
+            } else {
+                // un recoverable
+                panic!("Socket error {error}")
+            }
+            
+        },
+    }
     let prayer = Prayers::new_async(
         String::from("Toronto"),
         String::from("Canada"),
