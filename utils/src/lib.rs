@@ -1,6 +1,5 @@
 pub mod prayer;
 use bitcode::{Decode, Encode};
-use prayer::Prayers;
 
 #[derive(Decode, Encode, Debug)]
 pub enum Request {

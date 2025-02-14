@@ -1,16 +1,14 @@
-use chrono::NaiveTime;
-use log::{debug, error, info, trace, warn};
+use log::{error, info};
 use std::sync::Arc;
 use std::time::SystemTime;
 use std::{
     fs,
     path::PathBuf,
-    sync::atomic::{AtomicBool, Ordering},
 };
-use tokio::io::{self, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
+use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{mpsc, RwLock};
 use tokio::time::sleep;
 use utils::prayer::{format_time_difference, Prayer};
 use utils::Answer;
@@ -30,7 +28,7 @@ async fn main() -> io::Result<()> {
     // for now we will write the socket here:
 
     let listener = UnixListener::bind("/tmp/adthand").unwrap();
-    let mut prayer = Prayers::new_async(
+    let prayer = Prayers::new_async(
         String::from("Toronto"),
         String::from("Canada"),
         chrono::Local::now().date_naive(),

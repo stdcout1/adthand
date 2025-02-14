@@ -1,4 +1,4 @@
-use chrono::{format, DateTime, Days, Local, NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{Local, NaiveDate, NaiveDateTime, NaiveTime};
 use reqwest;
 use std::{collections::VecDeque, time::Duration};
 use thiserror::Error;
@@ -146,7 +146,7 @@ pub fn format_time_difference(future_time: NaiveDateTime) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    
     #[test]
     fn toronto_canada_prayers() {}
 }

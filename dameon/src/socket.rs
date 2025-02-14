@@ -2,7 +2,7 @@
 //
 
 use std::{fs, os::unix::net::UnixListener, path::PathBuf};
-use log::{debug, error, info, trace, warn};
+use log::{error, info};
 pub struct SocketWrapper(pub UnixListener);
 
 impl SocketWrapper {
