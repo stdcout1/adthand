@@ -29,7 +29,7 @@
             cargoBuildFlags = [ "--workspace" ];
 
             useFetchCargoVendor = true;
-            cargoHash = "sha256-fm6WVXEWE+kVlGlUIHxzlHsVgMJKkcYjQkm3UCnxP5I=";
+            cargoHash = "sha256-Tb4rG5A3KZ8gXUlE3/vgoA9nibURKOr/TwE/ddIh1eM=";
 
             postFixup = ''
               mv $out/bin/dameon $out/bin/adthand-dameon
