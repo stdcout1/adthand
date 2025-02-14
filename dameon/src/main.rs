@@ -10,16 +10,12 @@ use tokio::net::{UnixListener, UnixStream};
 use tokio::signal;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::sleep;
-use utils::prayer::{format_time_difference, Prayer};
+use utils::prayer::format_time_difference;
 use utils::Answer;
 
 mod socket;
 use utils::{self, prayer::Prayers, Request};
 
-struct State {
-    next: Prayer,
-    upcoming: Vec<Prayer>,
-}
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -219,7 +215,7 @@ fn setup_logger() -> Result<(), fern::InitError> {
         })
         .level(log::LevelFilter::Debug)
         .chain(std::io::stdout())
-        .chain(fern::log_file("output.log")?)
+        // .chain(fern::log_file("output.log")?)
         .apply()?;
     Ok(())
 }
