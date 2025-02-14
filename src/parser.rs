@@ -10,5 +10,6 @@ pub enum Adthand {
         #[arg(short)]
         relative: bool
     },
+    Waybar,
     All
 }

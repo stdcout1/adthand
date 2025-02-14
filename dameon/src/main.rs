@@ -139,9 +139,52 @@ async fn handle_client(
         Request::All => {
             send(
                 &mut stream,
-                Answer::All(prayer.prayer_que.iter().map(|p| p.name.as_ref()).collect()),
+                Answer::All(
+                    prayer
+                        .prayer_que
+                        .iter()
+                        .map(|p| {
+                            (
+                                p.name.as_ref(),
+                                p.time.time().format("%I:%M %P").to_string(),
+                            )
+                        })
+                        .collect(),
+                ),
             )
             .await
+        }
+        Request::Waybar => {
+            let next_name: &str = prayer.next.as_ref().unwrap().name.as_ref();
+            let next_time: String = prayer
+                .next
+                .as_ref()
+                .unwrap()
+                .time
+                .time()
+                .format("%I:%M %P")
+                .to_string();
+            let next_difference: String =
+                format_time_difference(prayer.next.as_ref().unwrap().time);
+            send(
+                &mut stream,
+                Answer::Waybar(
+                    next_name,
+                    &next_time,
+                    &next_difference,
+                    prayer
+                        .prayer_que
+                        .iter()
+                        .map(|p| {
+                            (
+                                p.name.as_ref(),
+                                p.time.time().format("%I:%M %P").to_string(),
+                            )
+                        })
+                        .collect(),
+                ),
+            )
+            .await;
         }
     }
     info!("Size of incomming payload: {}", buf.len());

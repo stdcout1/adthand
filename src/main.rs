@@ -25,9 +25,12 @@
 // }
 
 mod parser;
+mod waybar;
 use std::{
+    fmt::{format, Display},
     io::{Read, Write},
     os::unix::net::UnixStream,
+    result,
 };
 
 use clap::Parser;
@@ -40,7 +43,7 @@ fn main() {
     let mut stream = UnixStream::connect("/tmp/adthand").unwrap();
 
     match adthand {
-        Adthand::Init => {}// do we really need this?
+        Adthand::Init => {} // do we really need this?
         Adthand::Ping => {
             stream
                 .write_all(bitcode::encode(&Request::Ping).as_slice())
@@ -70,18 +73,29 @@ fn main() {
             stream.read_to_end(&mut buf).unwrap();
             let cmd: Answer = bitcode::decode(&buf).unwrap();
             println!("Recived command of: {:?}", cmd);
-            if let Answer::Next(name, time, relative_time ) = cmd {
+            if let Answer::Next(name, time, relative_time) = cmd {
                 if relative {
-                    println!("{} {}",name, relative_time)
-                }
-                else {
+                    println!("{} {}", name, relative_time)
+                } else {
                     println!("{} at {}", name, time)
                 }
-            }
-            else {
+            } else {
                 eprint!("Recived incorrect response")
             }
         }
+        Adthand::Waybar => {
+            stream
+                .write_all(bitcode::encode(&Request::Waybar).as_slice())
+                .unwrap();
+            let mut buf: Vec<u8> = Vec::new();
+            stream.read_to_end(&mut buf).unwrap();
+            let cmd: Answer = bitcode::decode(&buf).unwrap();
+            if let Some(result) = waybar::Waybar::new(cmd) {
+                println!("{}", result.to_string())
+            } else {
+                // this should never happen and is truly unreconverable
+                panic!("incorrect response")
+            }
+        }
     }
-
 }

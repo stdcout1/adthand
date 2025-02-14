@@ -7,14 +7,16 @@ pub enum Request {
     Kill,
     Ping,
     Next,
-    All
+    Waybar,
+    All,
 }
 
 #[derive(Decode, Encode, Debug)]
 pub enum Answer<'a> {
     Ping,
     Next(&'a str, &'a str, &'a str),
-    All(Vec<&'a str>)
+    Waybar(&'a str, &'a str, &'a str, Vec<(&'a str, String)>),
+    All(Vec<(&'a str, String)>),
 }
 
 #[cfg(test)]
