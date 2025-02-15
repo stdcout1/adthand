@@ -45,7 +45,7 @@ fn main() {
             let mut buf: Vec<u8> = Vec::new();
             stream.read_to_end(&mut buf).unwrap();
             let cmd: Answer = bitcode::decode(&buf).unwrap();
-            println!("Recived command of: {:?}", cmd);
+            // println!("Recived command of: {:?}", cmd);
             if let Answer::Next(name, time, relative_time) = cmd {
                 if relative {
                     println!("{} {}", name, relative_time)
