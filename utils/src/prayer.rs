@@ -30,6 +30,7 @@ pub struct Prayer {
 pub struct Prayers {
     city: String,
     country: String,
+    creation_date: NaiveDate,
     // TODO: we should remove this pubs
     pub next: Option<Prayer>,
     pub prayer_que: VecDeque<Prayer>,
@@ -84,6 +85,7 @@ impl Prayers {
         Ok(Prayers {
             city,
             country,
+            creation_date: date,
             next: None,
             prayer_que: plist.into(),
             prayers,
@@ -113,7 +115,7 @@ impl Prayers {
                 let new = Self::new_async(
                     self.city.clone(),
                     self.country.clone(),
-                    Local::now().date_naive().succ_opt().unwrap(),
+                    self.creation_date.succ(),
                 )
                 .await?;
                 // new.get_next_prayer_async().await;
