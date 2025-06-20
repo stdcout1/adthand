@@ -30,7 +30,7 @@ pub struct Prayer {
 pub struct Prayers {
     city: String,
     country: String,
-    // TODO: we should remove this pubs 
+    // TODO: we should remove this pubs
     pub next: Option<Prayer>,
     pub prayer_que: VecDeque<Prayer>,
     pub prayers: Vec<Prayer>,
@@ -90,7 +90,9 @@ impl Prayers {
         })
     }
     // This future resolves when it is a prayer time. Will refresh the struct if expired
-    pub async fn get_next_prayer_duration(self: &mut Self) -> Result<Duration, PrayerRetrievalError> {
+    pub async fn get_next_prayer_duration(
+        self: &mut Self,
+    ) -> Result<Duration, PrayerRetrievalError> {
         let now = Local::now().naive_local();
 
         println!("Getting next prayer...");
@@ -99,7 +101,7 @@ impl Prayers {
 
         match &self.next {
             Some(current_prayer) => {
-                let sleep_dur = current_prayer.time.signed_duration_since(now).num_seconds() as u64;
+                let sleep_dur = current_prayer.time.signed_duration_since(now).num_seconds().max(0) as u64;
                 println!(
                     "Sleeping for {:?} to wait for {}",
                     sleep_dur, current_prayer.name
@@ -116,7 +118,18 @@ impl Prayers {
                 .await?;
                 // new.get_next_prayer_async().await;
                 *self = new; //apparently this is safe?
-                             // TODO: this shouldnt be an error.
+                self.next = self.prayer_que.pop_front();
+
+                if let Some(current_prayer) = &self.next {
+                    let sleep_dur =
+                        current_prayer.time.signed_duration_since(now).num_seconds().max(0);
+                    println!(
+                        "Sleeping for {:?} to wait for {}",
+                        sleep_dur, current_prayer.name
+                    );
+                    return Ok(Duration::new(sleep_dur as u64, 0))
+                }
+
                 Err(PrayerRetrievalError::Unknown)
             }
         }
@@ -143,10 +156,9 @@ pub fn format_time_difference(future_time: NaiveDateTime) -> String {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    
+
     #[test]
     fn toronto_canada_prayers() {}
 }

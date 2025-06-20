@@ -1,14 +1,15 @@
+use chrono::Timelike;
 use log::{error, info};
 use notify_rust::error::ErrorKind;
-use tokio::fs::remove_file;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use std::{fs, path::PathBuf};
+use tokio::fs::remove_file;
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal;
 use tokio::sync::{mpsc, RwLock};
-use tokio::time::sleep;
+use tokio::time::{interval, sleep, Interval};
 use utils::prayer::format_time_difference;
 use utils::Answer;
 
@@ -34,22 +35,30 @@ async fn main() -> io::Result<()> {
                 // un recoverable
                 panic!("Socket error {error}")
             }
-            
-        },
+        }
     }
-    let prayer = Prayers::new_async(
-        String::from("Toronto"),
-        String::from("Canada"),
-        chrono::Local::now().date_naive(),
-    )
-    .await
-    .unwrap();
+    let prayer = loop {
+        match Prayers::new_async(
+            String::from("Toronto"),
+            String::from("Canada"),
+            chrono::Local::now().date_naive(),
+        )
+        .await
+        {
+            Ok(p) => break p,
+            Err(e) => {
+                error!("Error creating Prayers object: {:?}. Retrying...", e);
+                sleep(Duration::from_secs(5)).await;
+            }
+        }
+    };
 
     let prayer = Arc::new(RwLock::new(prayer));
+    let p1 = Arc::clone(&prayer);
+    let p2 = Arc::clone(&prayer);
 
     let (shutdown_tx, mut shutdown_rx) = mpsc::channel::<()>(1);
     let stx_clone = shutdown_tx.clone();
-    let prayer_ptr = prayer.clone();
     tokio::spawn(async move {
         signal::ctrl_c().await.expect("Failed to listen to ctrl_c");
         stx_clone.send(()).await.unwrap();
@@ -57,18 +66,33 @@ async fn main() -> io::Result<()> {
 
     tokio::spawn(async move {
         loop {
-            let sleep_dur = prayer_ptr.write().await.get_next_prayer_duration().await;
+            let sleep_dur = p1.write().await.get_next_prayer_duration().await;
             match sleep_dur {
                 Ok(time) => {
                     sleep(time).await;
-                    notify(prayer_ptr.read().await.next.as_ref().unwrap().name.as_ref());
+                    notify(p1.read().await.next.as_ref().unwrap().name.as_ref());
                 }
                 Err(e) => {
-                    error!("{:?}", e);
+                    error!("sleep error: {:?}", e);
                 }
             }
         }
     });
+
+    // check for inter expiry
+    // we can predict the expiry
+    // tokio::spawn(async move {
+    //     loop {
+    //         let now = chrono::Local::now().time();
+    //         let seconds_passed = now.num_seconds_from_midnight();
+    //         let seconds_in_day = 24 * 60 * 60;
+    //         let sleep_dur = Duration::from_secs((seconds_in_day - seconds_passed) as u64);
+    //         info!("sleeping until midnight to check for expiry");
+    //         sleep(sleep_dur).await;
+    //         // now we know its expired. so we update the prayer
+    //         prayer.write().await.get_next_prayer_duration().await
+    //     }
+    // });
 
     loop {
         tokio::select! {
@@ -97,6 +121,7 @@ fn init() {
     setup_logger().unwrap();
     // connect to the socket and start listening
     info!("Started");
+    info!("Time is {}", chrono::Local::now())
 }
 
 fn notify(name: &str) {
