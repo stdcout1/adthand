@@ -1,4 +1,4 @@
-use chrono::{Local, NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
 use reqwest;
 use std::{collections::VecDeque, time::Duration};
 use thiserror::Error;
@@ -22,7 +22,7 @@ pub enum PrayerResults {
 
 #[derive(Debug, Clone)]
 pub struct Prayer {
-    pub time: NaiveDateTime,
+    pub time: DateTime<Local>,
     pub name: String,
 }
 
@@ -63,9 +63,12 @@ impl Prayers {
             let naive_time = NaiveTime::from_hms_opt(hour, minute, 0).unwrap();
             let datetime = date.and_time(naive_time);
 
+            // this should never panic
+            let local_datetime = Local.from_local_datetime(&datetime).single().unwrap();
+
             prayers.push(Prayer {
                 name: name.to_owned(),
-                time: datetime,
+                time: local_datetime,
             })
         }
         let mut plist = prayers
@@ -75,8 +78,8 @@ impl Prayers {
                 // Filter out invalid or zero durations
                 let duration = prayer
                     .time
-                    .signed_duration_since(Local::now().naive_local());
-                // println!("Prayer {} has a time delta of {:?}", prayer.name, duration);
+                    .signed_duration_since(Local::now());
+                println!("Prayer {} has a time delta of {:?}", prayer.name, duration);
                 duration.num_seconds() > 0 // Filter out zero or negative durations
             })
             .collect::<Vec<Prayer>>();
@@ -92,10 +95,9 @@ impl Prayers {
         })
     }
     // This future resolves when it is a prayer time. Will refresh the struct if expired
-    pub async fn get_next_prayer_duration(
+    pub async fn get_next_prayer_datetime(
         self: &mut Self,
-    ) -> Result<Duration, PrayerRetrievalError> {
-        let now = Local::now().naive_local();
+    ) -> Result<DateTime<Local>, PrayerRetrievalError> {
 
         println!("Getting next prayer...");
 
@@ -103,19 +105,14 @@ impl Prayers {
 
         match &self.next {
             Some(current_prayer) => {
-                let sleep_dur = current_prayer.time.signed_duration_since(now).num_seconds().max(0) as u64;
-                println!(
-                    "Sleeping for {:?} to wait for {}",
-                    sleep_dur, current_prayer.name
-                );
-                Ok(Duration::new(sleep_dur, 0))
+                Ok(current_prayer.time)
             }
             None => {
                 println!("We have expired");
                 let new = Self::new_async(
                     self.city.clone(),
                     self.country.clone(),
-                    self.creation_date.succ(),
+                    self.creation_date.succ_opt().unwrap(),
                 )
                 .await?;
                 // new.get_next_prayer_async().await;
@@ -123,13 +120,7 @@ impl Prayers {
                 self.next = self.prayer_que.pop_front();
 
                 if let Some(current_prayer) = &self.next {
-                    let sleep_dur =
-                        current_prayer.time.signed_duration_since(now).num_seconds().max(0);
-                    println!(
-                        "Sleeping for {:?} to wait for {}",
-                        sleep_dur, current_prayer.name
-                    );
-                    return Ok(Duration::new(sleep_dur as u64, 0))
+                    return Ok(current_prayer.time)
                 }
 
                 Err(PrayerRetrievalError::Unknown)
@@ -140,8 +131,8 @@ impl Prayers {
 
 // General utils
 
-pub fn format_time_difference(future_time: NaiveDateTime) -> String {
-    let now = Local::now().naive_local();
+pub fn format_time_difference(future_time: DateTime<Local>) -> String {
+    let now = Local::now();
     let duration = future_time - now;
 
     if duration.num_seconds() <= 0 {

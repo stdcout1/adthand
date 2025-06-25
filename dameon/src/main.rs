@@ -1,4 +1,4 @@
-use chrono::Timelike;
+use chrono::{Local, Timelike};
 use log::{error, info};
 use notify_rust::error::ErrorKind;
 use std::sync::Arc;
@@ -9,7 +9,9 @@ use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal;
 use tokio::sync::{mpsc, RwLock};
+use tokio::task::LocalSet;
 use tokio::time::{interval, sleep, Interval};
+use tokio_walltime::sleep_until;
 use utils::prayer::format_time_difference;
 use utils::Answer;
 
@@ -19,6 +21,8 @@ use utils::{self, prayer::Prayers, Request};
 #[tokio::main]
 async fn main() -> io::Result<()> {
     init();
+
+    let local = LocalSet::new();
 
     // for now we will write the socket here:
     const SOCKET_ADDR: &'static str = "/tmp/adthand";
@@ -64,12 +68,13 @@ async fn main() -> io::Result<()> {
         stx_clone.send(()).await.unwrap();
     });
 
-    tokio::spawn(async move {
+    let handle = local.spawn_local(async move {
         loop {
-            let sleep_dur = p1.write().await.get_next_prayer_duration().await;
+            let sleep_dur = p1.write().await.get_next_prayer_datetime().await;
             match sleep_dur {
-                Ok(time) => {
-                    sleep(time).await;
+                Ok(date_time) => {
+                    println!("Sleeping until {:?}", date_time);
+                    sleep_until(date_time).await;
                     notify(p1.read().await.next.as_ref().unwrap().name.as_ref());
                 }
                 Err(e) => {
@@ -79,40 +84,30 @@ async fn main() -> io::Result<()> {
         }
     });
 
-    // check for inter expiry
-    // we can predict the expiry
-    // tokio::spawn(async move {
-    //     loop {
-    //         let now = chrono::Local::now().time();
-    //         let seconds_passed = now.num_seconds_from_midnight();
-    //         let seconds_in_day = 24 * 60 * 60;
-    //         let sleep_dur = Duration::from_secs((seconds_in_day - seconds_passed) as u64);
-    //         info!("sleeping until midnight to check for expiry");
-    //         sleep(sleep_dur).await;
-    //         // now we know its expired. so we update the prayer
-    //         prayer.write().await.get_next_prayer_duration().await
-    //     }
-    // });
-
-    loop {
-        tokio::select! {
-            _ = shutdown_rx.recv() => {
-                break;
-            },
-            result = listener.accept() => {
-                match result {
-                    Ok((socket, _addr)) => {
-                        let clone = shutdown_tx.clone();
-                        let p_clone = prayer.clone();
-                        tokio::spawn(async move {
-                            handle_client(socket, clone, p_clone).await
-                        });
-                    }
-                    Err(e) => {error!("{:?}",e);}
-                }
-            },
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                    _ = shutdown_rx.recv() => {
+                        handle.abort();
+                        break;
+                    },
+                    result = listener.accept() => {
+                        match result {
+                            Ok((socket, _addr)) => {
+                                let clone = shutdown_tx.clone();
+                                let p_clone = prayer.clone();
+                                tokio::spawn(async move {
+                                    handle_client(socket, clone, p_clone).await
+                                });
+                            }
+                            Err(e) => {error!("{:?}",e);}
+                        }
+                    },
+            }
         }
-    }
+    });
+
+    local.await;
 
     Ok(cleanup())
 }
