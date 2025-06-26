@@ -27,6 +27,8 @@
             version = "1";
             src = ./.;
             cargoBuildFlags = [ "--workspace" ];
+            RUSTFLAGS = "-C target-cpu=x86-64";
+            CARGO_PROFILE_RELEASE_LTO = "false";
 
             useFetchCargoVendor = true;
             cargoHash = "sha256-lsYvF0hdgOIp3UvVJt7GyaHnxoiQeWii+CuOf9fUpgI=";

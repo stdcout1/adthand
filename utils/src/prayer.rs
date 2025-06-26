@@ -79,7 +79,7 @@ impl Prayers {
                 let duration = prayer
                     .time
                     .signed_duration_since(Local::now());
-                println!("Prayer {} has a time delta of {:?}", prayer.name, duration);
+                // println!("Prayer {} has a time delta of {:?}", prayer.name, duration);
                 duration.num_seconds() > 0 // Filter out zero or negative durations
             })
             .collect::<Vec<Prayer>>();
